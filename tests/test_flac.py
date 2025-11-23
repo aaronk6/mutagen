@@ -634,16 +634,16 @@ class TFLACBadDuplicateVorbisComment(TestCase):
         os.unlink(self.filename)
 
     def test_load_multiple(self):
-        # on load always use the first one, like metaflac
+        # on load always use the last block (second one in this case)
         f = FLAC(self.filename)
-        assert f["DUPLICATE"] == ["FIRST"]
-        assert f.metadata_blocks[2] is f.tags
-        assert f.metadata_blocks[3]["DUPLICATE"] == ["SECOND"]
+        assert f["DUPLICATE"] == ["SECOND"]
+        assert f.metadata_blocks[3] is f.tags
+        assert f.metadata_blocks[2]["DUPLICATE"] == ["FIRST"]
 
         # save in the same order
         f.save()
         f = FLAC(self.filename)
-        assert f["DUPLICATE"] == ["FIRST"]
+        assert f["DUPLICATE"] == ["SECOND"]
 
     def test_delete_multiple(self):
         # on delete we delete both
@@ -661,8 +661,42 @@ class TFLACBadDuplicateVorbisComment(TestCase):
 
         # if delete failed we shouldn't see a difference
         f = FLAC(self.filename)
-        assert f.metadata_blocks[2] is f.tags
-        assert f.metadata_blocks[3].code == f.tags.code
+        assert f.metadata_blocks[3] is f.tags  # Uses last block
+        assert f.metadata_blocks[2].code == f.tags.code
+
+    def test_save_preserves_both_blocks(self):
+        # After loading and saving, both blocks should still exist
+        f = FLAC(self.filename)
+        f["NEW"] = ["New Tag"]
+        f.save()
+        
+        f = FLAC(self.filename)
+        assert f["DUPLICATE"] == ["SECOND"]
+        assert f["NEW"] == ["New Tag"]
+        # Should still have both blocks
+        assert len([b for b in f.metadata_blocks if b.code == VCFLACDict.code]) == 2
+
+    def test_always_uses_last_block(self):
+        # Add a third VORBIS_COMMENT block
+        f = FLAC(self.filename)
+        # Verify we're using the last (second) block
+        assert f.tags is f.metadata_blocks[3]
+        
+        # Add a third VORBIS_COMMENT block after the second
+        third_block = VCFLACDict()
+        third_block["THIRD"] = ["Third Block"]
+        f.metadata_blocks.insert(4, third_block)
+        f.save()
+        
+        # Reload and verify we now use the last (third) VORBIS_COMMENT block
+        f = FLAC(self.filename)
+        assert f["THIRD"] == ["Third Block"]
+        assert "DUPLICATE" not in f.tags  # Earlier blocks are ignored
+        # Count VORBIS_COMMENT blocks - should be 3
+        vc_blocks = [b for b in f.metadata_blocks if b.code == VCFLACDict.code]
+        assert len(vc_blocks) == 3
+        # Should use the last VORBIS_COMMENT block
+        assert f.tags is vc_blocks[-1]
 
 
 class TFLACBadBlockSizeOverflow(TestCase):

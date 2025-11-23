@@ -730,12 +730,17 @@ class FLAC(mutagen.FileType):
         block.code = code
 
         if block.code == VCFLACDict.code:
-            if self.tags is None:
-                self.tags = block
-            else:
-                # https://github.com/quodlibet/mutagen/issues/377
-                # Something writes multiple and metaflac doesn't care
-                pass
+            # https://github.com/quodlibet/mutagen/issues/377
+            # https://github.com/quodlibet/mutagen/issues/692
+            # Always use the last VORBIS_COMMENT block. Some files have
+            # multiple blocks, violating the FLAC spec. There is no consensus
+            # on how to handle this: metaflac uses the first block (even if
+            # empty), ffmpeg merges all blocks, Audio Toolbox (Apple) uses the
+            # last block (even if empty). We follow Apple's behavior, assuming
+            # that if there are multiple blocks, the first one comes from the
+            # encoder and the last one from a tagging library that incorrectly
+            # added a new block instead of modifying the existing one.
+            self.tags = block
         elif block.code == CueSheet.code:
             if self.cuesheet is None:
                 self.cuesheet = block
